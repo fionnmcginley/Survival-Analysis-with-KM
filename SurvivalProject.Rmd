@@ -1,0 +1,151 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+. 
+```{r}
+install.packages(c("survival","tidyverse"))
+install.packages("devtools") 
+devtools::install_github("nicolash2/ggsurvival", force = T)
+```
+```{r}
+
+library(survival)
+library(tidyverse)
+library(ggsurvival)
+library(ggplot2)
+```
+
+```{r}
+#First construct Kaplan-Meier curves
+#built in data-set for survival
+#Time to event(death) in days
+#in the status column, 1 is a (right) censored data point, 2 is death
+lung
+```
+```{r}
+km = survfit(Surv(time,status) ~ 1, lung) 
+km
+```
+
+```{r}
+
+# Kaplan-Meier fit
+km <- survfit(Surv(time, status) ~ 1, data = lung)
+
+# Extract survival summary into a data frame
+km_data <- data.frame(
+  time = km$time,
+  surv = km$surv,
+  lower = km$lower,
+  upper = km$upper
+)
+
+# Plot with ggplot2
+ggplot(km_data, aes(x = time, y = surv)) +
+  geom_step(color = "blue") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "blue") +
+  labs(
+    title = "Kaplan-Meier Survival Curve with pointwise 95% CI's",
+    x = "Time(days)",
+    y = "Survival Probability"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+# Fit Kaplan-Meier model by sex
+km <- survfit(Surv(time, status) ~ sex, data = lung)
+
+# Extract the number of observations per group
+strata_counts <- km$strata
+
+# Create a group label vector: 1 = male, 2 = female in the data
+sex_labels <- rep(c("Male", "Female"), times = strata_counts)
+
+# Build the plotting data frame
+km_df <- data.frame(
+  time  = km$time,
+  surv  = km$surv,
+  lower = km$lower,
+  upper = km$upper,
+  sex   = sex_labels
+)
+
+# Plot with ggplot2
+ggplot(km_df, aes(x = time, y = surv, color = sex, fill = sex)) +
+  geom_step() +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) +
+  labs(
+    title = "Sex stratified Kaplan-Meier Survival Curve",
+    x = "Time (days)",
+    y = "Survival Probability"
+  ) +
+  theme_minimal()
+```
+```{r}
+#Part 2: Cox's Proportional Hazard Model
+#need a dummy variable, so recode sex to make male a reference category
+modlung = lung |>
+  mutate(
+    female = if_else(sex==2,1,0)
+  )
+modlung
+```
+```{r}
+#use female as a covariate in our regression
+fit = coxph(Surv(time, status) ~ female, data=modlung)
+summary(fit)
+```
+```{r}
+
+# Create predictions for each level of 'female'
+newdata_list <- list(
+  Male = data.frame(female = 0),
+  Female = data.frame(female = 1)
+)
+
+# Build list of data frames for each group
+plotdata_list <- lapply(names(newdata_list), function(group) {
+  surv <- survfit(fit, newdata = newdata_list[[group]])
+  data.frame(
+    time = surv$time,
+    surv = surv$surv,
+    lower = surv$lower,
+    upper = surv$upper,
+    group = group
+  )
+})
+
+# Combine all into one tidy data frame
+plotdata <- bind_rows(plotdata_list)
+
+# Plot
+ggplot(plotdata, aes(x = time, y = surv, color = group, fill = group)) +
+  geom_step() +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) +
+  labs(
+    title = "Predicted Survival Curves from Cox Model (Female as Covariate)",
+    x = "Time (days)",
+    y = "Survival Probability",
+    color = "Group",
+    fill = "Group"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# Plot
+ggplot(plotdata, aes(x = time, y = surv, color = group, fill = group)) +
+  geom_step() +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) +
+  labs(
+    title = "Survival Curves from Cox Model (Female as Covariate)",
+    x = "Time (days)",
+    y = "Survival Probability"
+  ) +
+  theme_minimal()
+```
+
